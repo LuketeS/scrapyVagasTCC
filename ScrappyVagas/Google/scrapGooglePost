@@ -1,0 +1,121 @@
+import pandas as pd
+import json
+import time
+import requests
+from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+
+# Configuração do serviço do Chrome
+service = Service()
+options = webdriver.ChromeOptions()
+driver = webdriver.Chrome(service=service, options=options)
+
+# URL do site
+url = 'https://www.google.com/search?q=vagas%20emprego%20trans&rlz=1C1FHFK_pt-PTBR1091BR1091&oq=vagas%20em&gs_lcrp=EgZjaHJvbWUqCAgAEEUYJxg7MggIABBFGCcYOzIICAEQRRgnGDsyBggCEEUYOTIKCAMQABiSAxiABDINCAQQABiSAxiABBiKBTIVCAUQABhDGIMBGLEDGMkDGIAEGIoFMgcIBhAAGIAEMgcIBxAAGIAEMgoICBAAGLEDGIAEMgcICRAAGIAE0gEIMTYzNWowajeoAgCwAgA&sourceid=chrome&ie=UTF-8&jbr=sep:0&udm=8&ved=2ahUKEwj1_qqo9O2JAxV_Q7gEHfUZHEYQ3L8LegQIJBAN'
+driver.get(url)
+
+# Listas para armazenar dados
+titlesList = []
+empresaList = []
+linksList = []
+locaisList = []
+descriptionsList = []
+
+# URL do backend para enviar os dados via POST
+backend_url = "http://example.com/api/vagas"  # Substitua pelo seu endpoint de backend
+
+try:
+    # Localizar títulos e empresas na página inicial
+    WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, '.PUpOsf')))
+    total_vagas = len(driver.find_elements(By.CSS_SELECTOR, '.PUpOsf'))
+    print(f"Total de vagas encontradas: {total_vagas}")
+
+    # Processar cada vaga
+    for index in range(total_vagas):
+        try:
+            # Recarregar os elementos da lista
+            time.sleep(1)  # Delay explícito para evitar problemas de carregamento
+            WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, '.PUpOsf')))
+            titles = driver.find_elements(By.CSS_SELECTOR, '.PUpOsf')
+            empresas = driver.find_elements(By.CSS_SELECTOR, '.a3jPc')
+            link_elements = driver.find_elements(By.CSS_SELECTOR, 'a.MQUd2b')
+            locais = driver.find_elements(By.CSS_SELECTOR, '.wHYlTd.FqK3wc.MKCbgd')
+
+            # Obter título, empresa e link da vaga
+            title_text = titles[index].text if index < len(titles) else "Título não encontrado"
+            empresa_text = empresas[index].text if index < len(empresas) else "Empresa não encontrada"
+            link_href = link_elements[index].get_attribute("href") if index < len(link_elements) else "Link não encontrado"
+            local_text = locais[index].text if index < len(locais) else "Local não encontrado"
+
+            # Clicar no título da vaga
+            WebDriverWait(driver, 10).until(EC.element_to_be_clickable(titles[index])).click()
+            time.sleep(2)  # Tempo para garantir que a página carregue completamente
+            print(f"Clicando na vaga {index + 1}")
+
+            # Aguardar e capturar a descrição via span com a classe hkXmid
+            try:
+                WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'span.hkXmid')))
+                description = driver.find_element(By.CSS_SELECTOR, 'span.hkXmid').text
+            except Exception as e:
+                print(f"Erro ao capturar descrição para a vaga {index + 1}: {e}")
+                description = "Descrição não encontrada"
+            
+            descriptionsList.append(description)
+            print(f"Descrição capturada para a vaga {index + 1}")
+
+            # Fechar a descrição usando o botão de fechamento
+            try:
+                close_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '.ioQ39e.wv9iH.MjJqGe.cd29Sd'))
+                )
+                close_button.click()
+                time.sleep(2)  # Tempo para garantir que a página principal recarregue
+                print(f"Fechando a descrição para a vaga {index + 1}")
+            except Exception as e:
+                print(f"Erro ao fechar a descrição para a vaga {index + 1}: {e}")
+                break
+
+            # Preparar os dados no formato esperado pelo backend
+            vaga_data = {
+                "titulo": title_text,
+                "descricao": description,
+                "dataInicial": "2024-10-17",  # Substitua com a data correta
+                "dataFinal": "2024-11-17",    # Substitua com a data correta
+                "link": link_href,
+                "nivelExperiencia": {
+                    "descricao": "Júnior"  # Substitua com o nível correto
+                },
+                "tipoEmprego": {
+                    "descricao": "Tempo Integral"  # Substitua com o tipo correto
+                },
+                "tipoModalidade": {
+                    "descricao": "Remoto"  # Substitua com a modalidade correta
+                },
+                "endereco": {
+                    "cidade": local_text,  # Substitua com a cidade correta
+                    "estado": "*"     # Substitua com o estado correto
+                },
+                "categoria": {
+                    "descricao": "Marketing"  # Substitua com a categoria correta
+                }
+            }
+
+            # Enviar os dados para o backend via POST
+            response = requests.post(backend_url, json=vaga_data)
+
+            if response.status_code == 200:
+                print(f"Dados da vaga {index + 1} enviados com sucesso.")
+            else:
+                print(f"Falha ao enviar os dados da vaga {index + 1}. Status: {response.status_code}")
+
+        except Exception as e:
+            print(f"Erro ao processar a vaga {index + 1}: {e}")
+            continue
+except Exception as e:
+    print(f"Erro geral no scraping: {e}")
+
+# Fechar o navegador
+driver.quit()
